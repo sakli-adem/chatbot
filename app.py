@@ -5,63 +5,73 @@ import time
 import json
 import re
 from google import genai
-
-# --- Imports ---
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_community.vectorstores import FAISS
 
-# --- 🔑 API Key ---
-FIXED_API_KEY = "AIzaSyDjZ0igflBSazzUC3bEHf3mjLQ1L_E6dkI" 
+try:
+    api_key = st.secrets["GOOGLE_API_KEY"]
+except FileNotFoundError:
+    st.error("⚠️ لم يتم العثور على ملف الأسرار (secrets.toml).")
+    st.stop()
+
 INDEX_FOLDER = "faiss_index_ae"
 
-# --- إعدادات الصفحة ---
 st.set_page_config(page_title="المبادر الذاتي - Assistant", page_icon="🇹🇳", layout="centered")
 
-# --- CSS Styling ---
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;700&display=swap');
-    html, body, [class*="css"] {
-        font-family: 'Cairo', sans-serif;
-        direction: rtl;
+
+    /* 1. تطبيق الخط والعربية على كامل التطبيق */
+    html, body, .stApp {
+        font-family: 'Cairo', sans-serif !important;
+        direction: rtl !important;
+        text-align: right !important;
+    }
+
+    /* 2. قلب اتجاه رسائل الشات (باش الـ Avatar يجي ع اليمين) */
+    .stChatMessage {
+        flex-direction: row-reverse !important;
+        text-align: right !important;
+        direction: rtl !important;
+        gap: 10px; /* مسافة صغيرة بين التصويرة والكتيبة */
+    }
+    
+    /* 3. تصليح المحتوى داخل الرسالة */
+    div[data-testid="stChatMessageContent"] {
+        text-align: right !important;
+        direction: rtl !important;
+        margin-right: 10px !important; /* باش يبعد شوية عالـ Avatar */
+        margin-left: 0px !important;
+    }
+
+    /* 4. تصليح مكان الـ Avatar (الأيقونة) */
+    .stChatMessage .stChatMessageAvatar {
+        margin-left: 0 !important;
+        margin-right: 0 !important;
+    }
+
+    /* 5. تصليح القوائم والنقاط */
+    ul, ol {
+        direction: rtl !important;
+        text-align: right !important;
+        margin-right: 20px !important;
+    }
+    
+    /* 6. تصليح خانة الكتابة (Input) */
+    .stChatInputContainer textarea {
+        direction: rtl !important;
+        text-align: right !important;
+    }
+    
+    /* 7. العناوين والنصوص */
+    p, h1, h2, h3, h4, h5, h6, span, div {
         text-align: right;
     }
-    .stChatMessage {
-        direction: rtl !important;
-        text-align: right !important;
-        border-radius: 15px;
-        padding: 15px;
-        font-size: 16px;
-    }
-    div[data-testid="stChatMessageContent"] {
-        direction: rtl !important;
-        text-align: right !important;
-    }
-    .stButton button {
-        width: 100%;
-        border-radius: 8px;
-        background-color: #f0f2f6;
-        color: #1f77b4;
-        border: 1px solid #d6d6d6;
-        font-family: 'Cairo', sans-serif;
-        font-weight: bold;
-        transition: 0.3s;
-    }
-    .stButton button:hover {
-        background-color: #e2e6ea;
-        border-color: #1f77b4;
-    }
-    h1, h2, h3 { 
-        color: #1f77b4; 
-        text-align: center; 
-        font-family: 'Cairo', sans-serif;
-    }
-    .stDeployButton {display:none;}
     </style>
 """, unsafe_allow_html=True)
 
-# --- الدوال (Functions) ---
 
 def get_all_files_text(file_list):
     text = ""
@@ -121,8 +131,7 @@ def create_vector_store_with_batches(text_chunks, api_key):
 
 def get_gemini_response_with_suggestions(context_text, user_question, api_key):
     client = genai.Client(api_key=api_key)
-    
-    # --- Prompt ذكي يطلب الجواب + 3 اقتراحات ---
+
     prompt = f"""
     أنت المساعد الذكي الرسمي لمنصة "المبادر الذاتي" في تونس.
     
@@ -176,7 +185,7 @@ def process_query(user_question, api_key):
             "suggestions": []
         }
 
-# --- الواجهة الرئيسية (Main) ---
+
 
 def main():
     st.title("🇹🇳 المساعد الذكي للمبادر الذاتي")
@@ -185,6 +194,7 @@ def main():
     # 1. تهيئة الـ Session State
     if "messages" not in st.session_state:
         st.session_state.messages = [
+            
             {"role": "assistant", "content": "مرحباً بك! 👋\nأنا المساعد الآلي لمنصة المبادر الذاتي.\n\nتفضل، كيف يمكنني مساعدتك اليوم؟"}
         ]
     
@@ -215,7 +225,7 @@ def main():
                     raw_text = get_all_files_text(existing_files)
                     if raw_text:
                         text_chunks = get_text_chunks(raw_text)
-                        create_vector_store_with_batches(text_chunks, FIXED_API_KEY)
+                        create_vector_store_with_batches(text_chunks, api_key)
                         st.rerun()
 
     # 3. عرض المحادثة
@@ -249,7 +259,7 @@ def handle_user_input(prompt):
         message_placeholder = st.empty()
         with st.spinner("جاري المعالجة..."):
             # نتحصلو على الـ JSON (الجواب + الاقتراحات)
-            result_json = process_query(prompt, FIXED_API_KEY)
+            result_json = process_query(prompt, api_key)
             
             full_response = result_json.get("answer", "عذراً، لا توجد إجابة.")
             new_suggestions = result_json.get("suggestions", [])
