@@ -218,7 +218,8 @@ def main():
                     "TDRS AE  PHASE 1_07-2024.pdf", 
                     "projet cahier des charges phase II Autoentrepreneur.pdf",
                     "rapport-auto-entrepreneur.pdf",
-                    "more_data.txt"
+                    "more_data.txt",
+                    ""
                 ]
                 existing_files = [f for f in files_to_process if os.path.exists(f)]
                 if existing_files:
