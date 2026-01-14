@@ -160,7 +160,7 @@ def get_gemini_response_with_suggestions(context_text, user_question, api_key):
     
     try:
         response = client.models.generate_content(
-            model='gemini-flash-latest', # نستعملو Flash باش يكون سريع في توليد JSON
+            model='gemini-3-flash-preview', # نستعملو Flash باش يكون سريع في توليد JSON
             contents=prompt,
             config={'response_mime_type': 'application/json'} # نجبدو JSON صافي
         )
