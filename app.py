@@ -1,14 +1,11 @@
 import streamlit as st
-from PyPDF2 import PdfReader
 import os
-import time
 import json
-import re
 from google import genai
-from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_community.vectorstores import FAISS
 
+# --- 🔑 API Key ---
 try:
     api_key = st.secrets["GOOGLE_API_KEY"]
 except FileNotFoundError:
@@ -17,121 +14,93 @@ except FileNotFoundError:
 
 INDEX_FOLDER = "faiss_index_ae"
 
+# --- إعدادات الصفحة ---
 st.set_page_config(page_title="المبادر الذاتي - Assistant", page_icon="🇹🇳", layout="centered")
 
+# --- CSS Styling (RTL + Hide Sidebar) ---
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;700&display=swap');
 
-    /* 1. تطبيق الخط والعربية على كامل التطبيق */
+    /* 1. إخفاء القائمة الجانبية تماماً */
+    section[data-testid="stSidebar"] {
+        display: none;
+    }
+    
+    /* 2. تطبيق الخط والعربية على كامل التطبيق */
     html, body, .stApp {
         font-family: 'Cairo', sans-serif !important;
         direction: rtl !important;
         text-align: right !important;
     }
 
-    /* 2. قلب اتجاه رسائل الشات (باش الـ Avatar يجي ع اليمين) */
+    /* 3. قلب اتجاه رسائل الشات */
     .stChatMessage {
         flex-direction: row-reverse !important;
         text-align: right !important;
         direction: rtl !important;
-        gap: 10px; /* مسافة صغيرة بين التصويرة والكتيبة */
+        gap: 10px;
     }
     
-    /* 3. تصليح المحتوى داخل الرسالة */
+    /* 4. تصليح المحتوى داخل الرسالة */
     div[data-testid="stChatMessageContent"] {
         text-align: right !important;
         direction: rtl !important;
-        margin-right: 10px !important; /* باش يبعد شوية عالـ Avatar */
+        margin-right: 10px !important;
         margin-left: 0px !important;
     }
 
-    /* 4. تصليح مكان الـ Avatar (الأيقونة) */
+    /* 5. تصليح مكان الـ Avatar */
     .stChatMessage .stChatMessageAvatar {
         margin-left: 0 !important;
         margin-right: 0 !important;
     }
 
-    /* 5. تصليح القوائم والنقاط */
+    /* 6. تصليح القوائم والنقاط */
     ul, ol {
         direction: rtl !important;
         text-align: right !important;
         margin-right: 20px !important;
     }
     
-    /* 6. تصليح خانة الكتابة (Input) */
+    /* 7. تصليح خانة الكتابة */
     .stChatInputContainer textarea {
         direction: rtl !important;
         text-align: right !important;
     }
+
+    /* 8. الأزرار */
+    .stButton button {
+        width: 100%;
+        border-radius: 8px;
+        background-color: #f0f2f6;
+        color: #1f77b4;
+        border: 1px solid #d6d6d6;
+        font-family: 'Cairo', sans-serif;
+        font-weight: bold;
+        transition: 0.3s;
+    }
+    .stButton button:hover {
+        background-color: #e2e6ea;
+        border-color: #1f77b4;
+    }
     
-    /* 7. العناوين والنصوص */
+    /* 9. العناوين والنصوص */
     p, h1, h2, h3, h4, h5, h6, span, div {
         text-align: right;
     }
+    
+    /* إخفاء زر Deploy */
+    .stDeployButton {display:none;}
     </style>
 """, unsafe_allow_html=True)
 
 
-def get_all_files_text(file_list):
-    text = ""
-    for file_path in file_list:
-        try:
-            if file_path.endswith('.pdf'):
-                pdf_reader = PdfReader(file_path)
-                for page in pdf_reader.pages:
-                    extracted = page.extract_text()
-                    if extracted:
-                        text += extracted + "\n"
-            elif file_path.endswith('.txt'):
-                with open(file_path, 'r', encoding='utf-8') as f:
-                    text += f.read() + "\n"
-        except FileNotFoundError:
-            st.warning(f"⚠️ الملف {file_path} مفقود.")
-        except Exception as e:
-            st.error(f"خطأ في قراءة الملف {file_path}: {e}")
-    return text
-
-def get_text_chunks(text):
-    text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
-    chunks = text_splitter.split_text(text)
-    return chunks
-
-def create_vector_store_with_batches(text_chunks, api_key):
-    embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001", google_api_key=api_key)
-    vector_store = None
-    batch_size = 5
-    total_chunks = len(text_chunks)
-    
-    progress_bar = st.progress(0)
-    status_text = st.empty()
-    
-    try:
-        for i in range(0, total_chunks, batch_size):
-            batch = text_chunks[i:i+batch_size]
-            progress = min((i + batch_size) / total_chunks, 1.0)
-            progress_bar.progress(progress)
-            status_text.text(f"جاري تدريب الموديل: {int(progress*100)}% ...")
-
-            if vector_store is None:
-                vector_store = FAISS.from_texts(batch, embedding=embeddings)
-            else:
-                vector_store.add_texts(batch)
-            time.sleep(1)
-            
-        vector_store.save_local(INDEX_FOLDER)
-        status_text.success("✅ تم تحديث الموديل بنجاح!")
-        time.sleep(1)
-        status_text.empty()
-        progress_bar.empty()
-        return True
-    except Exception as e:
-        st.error(f"خطأ تقني: {e}")
-        return False
+# --- Fonctions Chat (Inference Only) ---
 
 def get_gemini_response_with_suggestions(context_text, user_question, api_key):
     client = genai.Client(api_key=api_key)
-
+    
     prompt = f"""
     أنت المساعد الذكي الرسمي لمنصة "المبادر الذاتي" في تونس.
     
@@ -160,15 +129,14 @@ def get_gemini_response_with_suggestions(context_text, user_question, api_key):
     
     try:
         response = client.models.generate_content(
-            model='Gemini 2.0 Flash-Lite', # نستعملو Flash باش يكون سريع في توليد JSON
+            model='gemini-3-flash-preview', 
             contents=prompt,
-            config={'response_mime_type': 'application/json'} # نجبدو JSON صافي
+            config={'response_mime_type': 'application/json'}
         )
         return json.loads(response.text)
     except Exception as e:
-        # في صورة ما صار خطأ، نرجعو جواب عادي واقتراحات عامة
         return {
-            "answer": "عذراً، حدث خطأ مؤقت. الرجاء المحاولة مرة أخرى.",
+            "answer": "عذراً، حدث خطأ مؤقت في الاتصال. الرجاء المحاولة مرة أخرى.",
             "suggestions": ["ما هي شروط الانخراط؟", "كيف أدفع؟", "اتصل بالدعم"]
         }
 
@@ -181,61 +149,36 @@ def process_query(user_question, api_key):
         return get_gemini_response_with_suggestions(context, user_question, api_key)
     except Exception:
         return {
-            "answer": "⚠️ النظام غير جاهز. الرجاء تحديث البيانات.",
+            "answer": "⚠️ النظام غير جاهز (قاعدة البيانات مفقودة).",
             "suggestions": []
         }
 
-
+# --- Main UI ---
 
 def main():
-    st.title("🇹🇳 المساعد الذكي للمبادر الذاتي")
-    st.markdown("<p style='text-align: center; color: gray;'>أنا هنا لمساعدتك في كل ما يخص نظام المبادر الذاتي</p>", unsafe_allow_html=True)
+    # Logo Centré en haut
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        st.image("https://www.autoentrepreneur.tn/assets/images/logo-ae.png", use_container_width=True)
 
-    # 1. تهيئة الـ Session State
+    st.markdown("<h1 style='text-align: center; color: #1f77b4;'>المساعد الذكي للمبادر الذاتي</h1>", unsafe_allow_html=True)
+    st.markdown("<p style='text-align: center; color: gray;'>مرحباً بك، أنا هنا لمساعدتك في كل ما يخص نظام المبادر الذاتي</p>", unsafe_allow_html=True)
+
+    # 1. Session State
     if "messages" not in st.session_state:
         st.session_state.messages = [
-            
             {"role": "assistant", "content": "مرحباً بك! 👋\nأنا المساعد الآلي لمنصة المبادر الذاتي.\n\nتفضل، كيف يمكنني مساعدتك اليوم؟"}
         ]
     
-    # 2. تهيئة الاقتراحات (Suggestions)
     if "current_suggestions" not in st.session_state:
         st.session_state.current_suggestions = ["ما هي شروط الانخراط؟", "كيف أدفع المساهمات؟", "الوثائق المطلوبة؟"]
 
-    # --- Sidebar ---
-    with st.sidebar:
-        st.image("https://www.autoentrepreneur.tn/assets/images/logo-ae.png", width=150)
-        st.header("الإعدادات")
-        
-        if os.path.exists(f"{INDEX_FOLDER}/index.faiss"):
-            st.success("البيانات متصلة 🟢")
-        else:
-            st.error("البيانات غير موجودة 🔴")
-            
-        if st.button("🔄 إطلاق التدريب (Entrainement)"):
-            with st.spinner("جاري التحديث..."):
-                files_to_process = [
-                    "TDRS AE  PHASE 1_07-2024.pdf", 
-                    "projet cahier des charges phase II Autoentrepreneur.pdf",
-                    "rapport-auto-entrepreneur.pdf",
-                    "more_data.txt",
-                    ""
-                ]
-                existing_files = [f for f in files_to_process if os.path.exists(f)]
-                if existing_files:
-                    raw_text = get_all_files_text(existing_files)
-                    if raw_text:
-                        text_chunks = get_text_chunks(raw_text)
-                        create_vector_store_with_batches(text_chunks, api_key)
-                        st.rerun()
-
-    # 3. عرض المحادثة
+    # 2. Affichage Chat
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
 
-    # 4. عرض الأزرار الديناميكية (Dynamic Buttons)
-    # تظهر فقط إذا كان آخر ميساج من عند الـ Assistant
+    # 3. Boutons Dynamiques
     if st.session_state.messages[-1]["role"] == "assistant":
         suggestions = st.session_state.current_suggestions
         if suggestions:
@@ -245,21 +188,18 @@ def main():
                 if cols[i].button(suggestion, key=f"sugg_{len(st.session_state.messages)}_{i}"):
                     handle_user_input(suggestion)
 
-    # 5. خانة الكتابة
+    # 4. Input Area
     if prompt := st.chat_input("اكتب سؤالك هنا..."):
         handle_user_input(prompt)
 
 def handle_user_input(prompt):
-    # عرض سؤال المستخدم
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
 
-    # معالجة الجواب
     with st.chat_message("assistant"):
         message_placeholder = st.empty()
         with st.spinner("جاري المعالجة..."):
-            # نتحصلو على الـ JSON (الجواب + الاقتراحات)
             result_json = process_query(prompt, api_key)
             
             full_response = result_json.get("answer", "عذراً، لا توجد إجابة.")
@@ -267,14 +207,12 @@ def handle_user_input(prompt):
             
             message_placeholder.markdown(full_response)
     
-    # تحديث الحالة (State)
     st.session_state.messages.append({"role": "assistant", "content": full_response})
     
-    # تحديث الاقتراحات للأزرار القادمة
     if new_suggestions:
         st.session_state.current_suggestions = new_suggestions
     else:
-        st.session_state.current_suggestions = [] # تفريغ إذا مفماش اقتراحات
+        st.session_state.current_suggestions = []
         
     st.rerun()
 
