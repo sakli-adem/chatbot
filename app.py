@@ -129,7 +129,7 @@ def get_gemini_response_with_suggestions(context_text, user_question, api_key):
     
     try:
         response = client.models.generate_content(
-            model='gemini-3-flash-preview', 
+            model='gemini-flash-latest', 
             contents=prompt,
             config={'response_mime_type': 'application/json'}
         )
