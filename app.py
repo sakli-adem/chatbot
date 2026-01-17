@@ -129,7 +129,7 @@ def get_gemini_response_with_suggestions(context_text, user_question, api_key):
     
     try:
         response = client.models.generate_content(
-            model='gemini-3-flash-preview', 
+            model='gemini-2.5-flash-lite', 
             contents=prompt,
             config={'response_mime_type': 'application/json'}
         )
@@ -158,8 +158,7 @@ def process_query(user_question, api_key):
 def main():
     # Logo Centré en haut
     col1, col2, col3 = st.columns([1, 2, 1])
-    with col2:
-        st.image("https://www.autoentrepreneur.tn/assets/images/logo-ae.png", use_container_width=True)
+
 
     st.markdown("<h1 style='text-align: center; color: #1f77b4;'>المساعد الذكي للمبادر الذاتي</h1>", unsafe_allow_html=True)
     st.markdown("<p style='text-align: center; color: gray;'>مرحباً بك، أنا هنا لمساعدتك في كل ما يخص نظام المبادر الذاتي</p>", unsafe_allow_html=True)
